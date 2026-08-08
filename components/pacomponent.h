@@ -1,16 +1,19 @@
-#ifndef PA_HOOK_H
-#define PA_HOOK_H
+#ifndef PA_COMPONENT_H
+#define PA_COMPONENT_H
 
 #include <pulse/pulseaudio.h>
 
 typedef struct {
+    int                  fd;
     pa_threaded_mainloop *mainloop;
     pa_mainloop_api      *api;
     pa_context           *ctx;
-} pa_hook;
+} pa_component;
 
-pa_hook* pa_hook_new();
-void pa_hook_free(pa_hook *h);
+void* pa_component_init();
+void pa_component_pass_fd(void *userdata, int fd);
+void pa_component_start(void *userdata);
+void pa_component_free(void *userdata);
 
 void ctx_state_callback(pa_context *ctx, void *userdata);
 void ctx_event_callback(pa_context *ctx, const char *name, pa_proplist *pl, void *userdata);

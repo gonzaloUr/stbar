@@ -11,3 +11,6 @@ LIBS = -lpulse -ludev
 # flags
 CFLAGS = -std=c23 -pedantic -Wall -Os $(INCS)
 LDFLAGS = $(LIBS)
+
+# components
+COMPONENTS = components/pacomponent.o

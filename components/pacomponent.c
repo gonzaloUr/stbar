@@ -1,70 +1,63 @@
-#include "pahook.h"
+#include "pacomponent.h"
 #include <stdlib.h>
 
-void* pa_init_component() {
-    return NULL;
+void* pa_component_init() {
+    void *self = malloc(sizeof(pa_component));
+    return self;
 }
 
-void pa_pass_fd_component(void *userdata, int fd) {
+void pa_component_pass_fd(void *userdata, int fd) {
+    pa_component *self = (pa_component*) userdata;
+    self->fd = fd;
 }
 
-void pa_start_component(void *userdata) {
-}
-
-void pa_free_component(void *userdata) {
-}
-
-pa_hook* pa_hook_new() {
-    // Create pa_hook.
-    pa_hook *ret = malloc(sizeof(pa_hook));
+void pa_component_start(void *userdata) {
+    pa_component *self = (pa_component*) userdata;
 
     // Create mainloop.
-    ret->mainloop = pa_threaded_mainloop_new();
-    if (!ret->mainloop) {
-        free(ret);
-
-        return NULL;
+    self->mainloop = pa_threaded_mainloop_new();
+    if (!self->mainloop) {
+        free(self);
+        abort();
     }
 
     // Get mainloop api.
-    ret->api = pa_threaded_mainloop_get_api(ret->mainloop);
+    self->api = pa_threaded_mainloop_get_api(self->mainloop);
 
     // Create context.
-    ret->ctx = pa_context_new(ret->api, "pahook");
-    if (!ret->ctx) {
-        pa_threaded_mainloop_free(ret->mainloop);
-        free(ret);
-
-        return NULL;
+    self->ctx = pa_context_new(self->api, "pacomponent");
+    if (!self->ctx) {
+        pa_threaded_mainloop_free(self->mainloop);
+        free(self);
+        abort();
     }
 
     // Setup context callbacks.
-    pa_context_set_state_callback(ret->ctx, ctx_state_callback, ret);
-    pa_context_set_event_callback(ret->ctx, ctx_event_callback, ret);
-    pa_context_set_subscribe_callback(ret->ctx, ctx_subscribe_callback, ret);
+    pa_context_set_state_callback(self->ctx, ctx_state_callback, self);
+    pa_context_set_event_callback(self->ctx, ctx_event_callback, self);
+    pa_context_set_subscribe_callback(self->ctx, ctx_subscribe_callback, self);
 
     // Connect context.
-    pa_threaded_mainloop_lock(ret->mainloop);
+    pa_threaded_mainloop_lock(self->mainloop);
 
-    if (pa_context_connect(ret->ctx, NULL, PA_CONTEXT_NOFLAGS, NULL) < 0) {
-        pa_context_unref(ret->ctx);
-        pa_threaded_mainloop_free(ret->mainloop);
-        free(ret);
-
-        return NULL;
+    if (pa_context_connect(self->ctx, NULL, PA_CONTEXT_NOFLAGS, NULL) < 0) {
+        pa_context_unref(self->ctx);
+        pa_threaded_mainloop_free(self->mainloop);
+        free(self);
+        abort();
     }
 
-    pa_threaded_mainloop_unlock(ret->mainloop);
-
-    // Return.
-    return ret;
+    pa_threaded_mainloop_unlock(self->mainloop);
 }
 
-void pa_hook_free(pa_hook *h) {
-	pa_threaded_mainloop_stop(h->mainloop);
-	pa_context_disconnect(h->ctx);
-	pa_context_unref(h->ctx);
-	pa_threaded_mainloop_free(h->mainloop);
+void pa_component_free(void *userdata) {
+    pa_component *self = (pa_component*) userdata;
+
+	pa_threaded_mainloop_stop(self->mainloop);
+	pa_context_disconnect(self->ctx);
+	pa_context_unref(self->ctx);
+	pa_threaded_mainloop_free(self->mainloop);
+    free(self);
 }
 
 // Callback related to the mainloop of this pulseaudio client.

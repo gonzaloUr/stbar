@@ -2,27 +2,27 @@ include config.mk
 
 .PHONY: all clean install uninstall
 
-all: hooks
+all: stbar
 
 install: all
 	mkdir -p $(PREFIX)/bin
-	cp hooks $(PREFIX)/bin
+	cp stbar $(PREFIX)/bin
 
 uninstall:
-	rm -f $(PREFIX)/bin/hooks
+	rm -f $(PREFIX)/bin/stbar
 
 clean:
-	rm -f hooks.o hooks
+	rm -f stbar.o stbar
 	rm -f components/*.o
 
-hooks: hooks.o components/pahook.o
-	$(CC) $(LDFLAGS) hooks.o components/*.o -o hooks
+stbar: stbar.o $(COMPONENTS)
+	$(CC) $(LDFLAGS) stbar.o $(COMPONENTS) -o stbar
 
-hooks.o: hooks.c hooks.h config.h
-	$(CC) $(CFLAGS) -c hooks.c -o hooks.o
+stbar.o: stbar.c stbar.h config.h
+	$(CC) $(CFLAGS) -c stbar.c -o stbar.o
 
 config.h: config.def.h
 	cp config.def.h config.h
 
-components/pahook.o: components/pahook.c components/pahook.h
-	$(CC) $(CFLAGS) -c components/pahook.c -o components/pahook.o
+components/%.o: components/%.c components/%.h
+	$(CC) $(CFLAGS) -c $< -o $@
