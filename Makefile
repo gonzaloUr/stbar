@@ -15,14 +15,11 @@ clean:
 	rm -f stbar.o stbar
 	rm -f components/*.o
 
-stbar: stbar.o $(COMPONENTS)
-	$(CC) $(LDFLAGS) stbar.o $(COMPONENTS) -o stbar
+stbar: stbar.o $(patsubst components/%.c,components/%.o,$(wildcard components/*.c))
+	$(CC) $(LDFLAGS) $^ -o $@
 
-stbar.o: stbar.c stbar.h config.h
+stbar.o: stbar.c config.c
 	$(CC) $(CFLAGS) -c stbar.c -o stbar.o
-
-config.h: config.def.h
-	cp config.def.h config.h
 
 components/%.o: components/%.c components/%.h
 	$(CC) $(CFLAGS) -c $< -o $@

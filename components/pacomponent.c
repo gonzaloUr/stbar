@@ -1,14 +1,23 @@
 #include "pacomponent.h"
 #include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
+#include <unistd.h>
 
-void* pa_component_init() {
-    void *self = malloc(sizeof(pa_component));
+void* pa_component_init(const void* config) {
+    pa_component *self = malloc(sizeof(pa_component));
+    if (pipe(self->pipefd) == -1) {
+        perror("pipe");
+        abort();
+    }
+
+    self->config = config;
     return self;
 }
 
-void pa_component_pass_fd(void *userdata, int fd) {
+int pa_component_get_fd(void *userdata) {
     pa_component *self = (pa_component*) userdata;
-    self->fd = fd;
+    return self->pipefd[0];
 }
 
 void pa_component_start(void *userdata) {
@@ -37,6 +46,13 @@ void pa_component_start(void *userdata) {
     pa_context_set_event_callback(self->ctx, ctx_event_callback, self);
     pa_context_set_subscribe_callback(self->ctx, ctx_subscribe_callback, self);
 
+    // Start threaded mainloop.
+    if (pa_threaded_mainloop_start(self->mainloop) < 0) {
+        pa_threaded_mainloop_free(self->mainloop);
+        free(self);
+        abort();
+    }
+
     // Connect context.
     pa_threaded_mainloop_lock(self->mainloop);
 
@@ -62,6 +78,7 @@ void pa_component_free(void *userdata) {
 
 // Callback related to the mainloop of this pulseaudio client.
 void ctx_state_callback(pa_context *ctx, void *userdata) {
+    pa_component *self = (pa_component*) userdata;
     pa_context_state_t state = pa_context_get_state(ctx);
 
     switch (state) {
@@ -78,6 +95,7 @@ void ctx_state_callback(pa_context *ctx, void *userdata) {
             break;
 
         case PA_CONTEXT_READY:
+            pa_context_subscribe(self->ctx, PA_SUBSCRIPTION_MASK_ALL, NULL, NULL);
             break;
 
         case PA_CONTEXT_FAILED:
@@ -86,10 +104,6 @@ void ctx_state_callback(pa_context *ctx, void *userdata) {
         case PA_CONTEXT_TERMINATED:
             break;
     }
-}
-
-// Init function that prints the current server info.
-void init_ctx_server_info_callback(pa_context *ctx, const pa_server_info *i, void *userdata) {
 }
 
 // context callback for events.
@@ -132,6 +146,10 @@ void ctx_subscribe_callback(pa_context *ctx, pa_subscription_event_type_t t, uin
 // A subscribe event related to a sink, a sink is an audio output device, like your speakers, headphones, HDMI audio, etc.
 void ctx_sink_info_callback(pa_context *ctx, const pa_sink_info *i, int eol, void *userdata) {
     if (eol > 0 || !i) return;
+    pa_component *self = (pa_component*) userdata;
+    pa_component_cfg *config = (pa_component_cfg*) self->config;
+
+    config->on_sink_info(i, self);
 }
 
 // A subscribe event related to a source, which is an audio input device, like a microphone or a virtual capture source.

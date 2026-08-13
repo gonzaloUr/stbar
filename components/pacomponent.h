@@ -1,17 +1,22 @@
-#ifndef PA_COMPONENT_H
-#define PA_COMPONENT_H
+#ifndef PULSE_COMPONENT_H
+#define PULSE_COMPONENT_H
 
 #include <pulse/pulseaudio.h>
 
 typedef struct {
-    int                  fd;
+    const void           *config;
+    int                  pipefd[2];
     pa_threaded_mainloop *mainloop;
     pa_mainloop_api      *api;
     pa_context           *ctx;
 } pa_component;
 
-void* pa_component_init();
-void pa_component_pass_fd(void *userdata, int fd);
+typedef struct {
+    void (*on_sink_info)(const pa_sink_info*, void*);
+} pa_component_cfg;
+
+void* pa_component_init(const void*);
+int pa_component_get_fd(void *userdata);
 void pa_component_start(void *userdata);
 void pa_component_free(void *userdata);
 
