@@ -5,7 +5,8 @@
 
 typedef struct {
     const void           *config;
-    int                  pipefd[2];
+    char                 msg[128];
+    int                  fd;
     pa_threaded_mainloop *mainloop;
     pa_mainloop_api      *api;
     pa_context           *ctx;
@@ -17,7 +18,7 @@ typedef struct {
 
 void* pa_component_init(const void*);
 int pa_component_get_fd(void *userdata);
-void pa_component_start(void *userdata);
+char* pa_component_exec(void *userdata);
 void pa_component_free(void *userdata);
 
 void ctx_state_callback(pa_context *ctx, void *userdata);

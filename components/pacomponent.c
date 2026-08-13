@@ -1,26 +1,19 @@
 #include "pacomponent.h"
+#include <sys/eventfd.h>
+#include <unistd.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
-#include <unistd.h>
 
 void* pa_component_init(const void* config) {
     pa_component *self = malloc(sizeof(pa_component));
-    if (pipe(self->pipefd) == -1) {
-        perror("pipe");
-        abort();
-    }
-
     self->config = config;
+    self->fd = eventfd(0, EFD_NONBLOCK);
+
     return self;
 }
 
 int pa_component_get_fd(void *userdata) {
-    pa_component *self = (pa_component*) userdata;
-    return self->pipefd[0];
-}
-
-void pa_component_start(void *userdata) {
     pa_component *self = (pa_component*) userdata;
 
     // Create mainloop.
@@ -64,6 +57,17 @@ void pa_component_start(void *userdata) {
     }
 
     pa_threaded_mainloop_unlock(self->mainloop);
+
+    return self->fd;
+}
+
+char* pa_component_exec(void *userdata) {
+    pa_component *self = (pa_component*) userdata;
+
+    uint64_t value;
+    read(self->fd, &value, sizeof(value));
+
+    return self->msg;
 }
 
 void pa_component_free(void *userdata) {
@@ -150,6 +154,8 @@ void ctx_sink_info_callback(pa_context *ctx, const pa_sink_info *i, int eol, voi
     pa_component_cfg *config = (pa_component_cfg*) self->config;
 
     config->on_sink_info(i, self);
+    uint64_t one = 1;
+    write(self->fd, &one, sizeof(one));
 }
 
 // A subscribe event related to a source, which is an audio input device, like a microphone or a virtual capture source.

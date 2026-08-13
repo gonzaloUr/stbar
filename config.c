@@ -2,13 +2,12 @@
 #include <stdio.h>
 
 void on_sink_info(const pa_sink_info *i, void *userdata) {
-    printf("name: %s\n", i->name);
-    printf("mute: %d\n", i->mute);
-
+    pa_component *comp = (pa_component*) userdata;
     pa_cvolume volumes = i->volume;
-    for (int i = 0; i < volumes.channels; i++) {
-        printf("volume %d: %u\n", i, volumes.values[i]);
-    }
+    pa_volume_t volumes_avg = pa_cvolume_avg(&volumes);
+    double percent = volumes_avg * 100.0 / PA_VOLUME_NORM;
+
+    sprintf(comp->msg, "vol %f\n", percent);
 }
 
 static const pa_component_cfg pa_cfg = {
@@ -17,13 +16,11 @@ static const pa_component_cfg pa_cfg = {
 
 static const struct arg args[] = {
     {
-        .type = WRITES_TO_FD,
-        .data.writes_to_fd = {
-            .config = &pa_cfg,
-            .init = pa_component_init,
-            .get_fd = pa_component_get_fd,
-            .start = pa_component_start,
-            .free = pa_component_free
-        }
+        .initial_text = "???",
+        .config = &pa_cfg,
+        .init = pa_component_init,
+        .get_fd = pa_component_get_fd,
+        .exec = pa_component_exec,
+        .free = pa_component_free
     }
 };
