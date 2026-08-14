@@ -18,11 +18,12 @@ struct arg {
 
 #include "config.c"
 
-static size_t args_size;
-static size_t modules_size;
-static void **userdatas;
-static int *memfds;
-static pthread_mutex_t *mutex;
+static size_t args_size = 0;
+static size_t modules_size = 0;
+static void **userdatas = NULL;
+static int *memfds = NULL;
+static pthread_mutex_t *mutex = NULL;
+struct epoll_event *events = NULL;
 
 int print_memfd(int i) {
     int fd = memfds[i];
@@ -98,7 +99,7 @@ int main() {
         }
     }
 
-    struct epoll_event *events = malloc(sizeof(struct epoll_event) * args_size);
+    events = malloc(sizeof(struct epoll_event) * args_size);
 
     do {
         pthread_mutex_lock(mutex);
