@@ -2,10 +2,12 @@
 #define PULSE_COMPONENT_H
 
 #include <pulse/pulseaudio.h>
+#include <pthread.h>
 
 typedef struct {
     const void           *config;
-    char                 msg[128];
+    pthread_mutex_t      *mutex;
+    int                  *memfds;
     int                  fd;
     pa_threaded_mainloop *mainloop;
     pa_mainloop_api      *api;
@@ -14,11 +16,19 @@ typedef struct {
 
 typedef struct {
     void (*on_sink_info)(const pa_sink_info*, void*);
+    void (*on_source_info)(const pa_source_info*, void*);
+    void (*on_sink_input_info)(const pa_sink_input_info*, void*);
+    void (*on_source_output_info)(const pa_source_output_info*, void*);
+    void (*on_module_info)(const pa_module_info*, void*);
+    void (*on_client_info)(const pa_client_info*, void*);
+    void (*on_sample_info)(const pa_sample_info*, void*);
+    void (*on_server_info)(const pa_server_info*, void*);
+    void (*on_card_info)(const pa_card_info*, void*);
 } pa_component_cfg;
 
-void* pa_component_init(const void*);
+void* pa_component_init(const void*, int*, pthread_mutex_t*);
 int pa_component_get_fd(void *userdata);
-char* pa_component_exec(void *userdata);
+void pa_component_exec(void *userdata);
 void pa_component_free(void *userdata);
 
 void ctx_state_callback(pa_context *ctx, void *userdata);

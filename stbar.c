@@ -1,85 +1,113 @@
 #define _GNU_SOURCE
 
 #include <sys/epoll.h>
+#include <sys/mman.h>
+#include <sys/stat.h>
+#include <pthread.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include <string.h>
 
 struct arg {
-    const char *initial_text;
     const void *config;
-    void* (*init)(const void*);
+    void* (*init)(const void*, int*, pthread_mutex_t*);
     int (*get_fd)(void*);
-    char* (*exec)(void*);
+    void (*exec)(void*);
     void (*free)(void*);
 };
 
 #include "config.c"
 
-struct modules {
-    int n;
-    char **current_text;
-    void **userdatas;
-    int epollfd;
-};
+static size_t args_size;
+static size_t modules_size;
+static void **userdatas;
+static int *memfds;
+static pthread_mutex_t *mutex;
 
-struct modules* modules_new(int n) {
-    struct modules *m = malloc(sizeof(struct modules));
-
-    m->n = n;
-    m->current_text = malloc(sizeof(char*) * n);
-    m->userdatas = malloc(sizeof(void*) * n);
-
-    return m;
-}
-
-void modules_print(struct modules *m) {
-    int n = m->n;
-
-    for (int i = 0; i < n; i++) {
-        void *self = m->userdatas[i];
-        struct arg arg = args[i];
-
-        printf("%s", arg.exec(self));
+int print_memfd(int i) {
+    int fd = memfds[i];
+    struct stat st;
+    if (fstat(fd, &st) == -1) {
+        perror("fstat");
+        return 1;
     }
+
+    size_t size = st.st_size;
+    char *buf = malloc(size + 1);
+    ssize_t n = pread(fd, buf, size, 0);
+
+    if (n == -1) {
+        perror("pread");
+        return 1;
+    }
+
+    buf[n] = '\0';
+
+    printf("%s", buf);
+    free(buf);
+
+    fflush(stdout);
+
+    return 0;
 }
 
-void modules_free(struct modules *m) {
-    free(m->current_text);
-    free(m->userdatas);
-    free(m);
+int print_memfds() {
+    if (print_memfd(0)) return 1;
+
+    for (int i = 1; i < modules_size; i++) {
+        printf(" | ");
+        if (print_memfd(i)) return 1;
+    }
+
+    fflush(stdout);
+
+    return 0;
 }
 
 int main() {
-    size_t n = sizeof(args) / sizeof(struct arg);
-    struct modules *m = modules_new(n);
+    args_size = sizeof(args) / sizeof(struct arg);
+    modules_size = sizeof(modules) / sizeof(char*);
+
+    userdatas = malloc(sizeof(void*) * args_size);
+    memfds = malloc(sizeof(int) * modules_size);
+    mutex = malloc(sizeof(pthread_mutex_t));
+
+    pthread_mutex_init(mutex, NULL);
 
     int epollfd = epoll_create1(0);
     if (epollfd == -1) {
-        modules_free(m);
         perror("epoll_create1");
         return 1;
     }
 
-    for (int i = 0; i < n; i++) {
+    for (int i = 0; i < modules_size; i++) {
+        memfds[i] = memfd_create("", MFD_CLOEXEC);
+        write(memfds[i], modules[i], strlen(modules[i]));
+    }
+
+    for (int i = 0; i < args_size; i++) {
         struct arg arg = args[i];
-        void *self = arg.init(arg.config);
+        void *self = arg.init(arg.config, memfds, mutex);
+        userdatas[i] = self;
+
         int fd = arg.get_fd(self);
-
-        m->current_text[i] = (char*) arg.initial_text;
-        m->userdatas[i] = self;
-
         struct epoll_event ev = { .events = EPOLLIN, .data.fd = fd, .data.u32 = i };
         if (epoll_ctl(epollfd, EPOLL_CTL_ADD, fd, &ev) == -1) {
-            modules_free(m);
             perror("epoll_ctl");
             return 1;
         }
     }
 
-    struct epoll_event *events = malloc(sizeof(struct epoll_event) * n);
+    struct epoll_event *events = malloc(sizeof(struct epoll_event) * args_size);
 
-    while (1) {
-        int count = epoll_wait(epollfd, events, n, -1);
+    do {
+        pthread_mutex_lock(mutex);
+        if (print_memfds()) return 1;
+        pthread_mutex_unlock(mutex);
+
+        printf("\n");
+
+        int count = epoll_wait(epollfd, events, args_size, -1);
         if (count == -1) {
             perror("epoll_wait");
             return 1;
@@ -90,12 +118,10 @@ int main() {
             int j = event.data.u32;
 
             struct arg arg = args[j];
-            void *self = m->userdatas[j];
-            m->current_text[j] = arg.exec(self);
+            void *self = userdatas[j];
+            arg.exec(self);
         }
-
-        modules_print(m);
-    }
+    } while(1);
 
     return 0;
 }
