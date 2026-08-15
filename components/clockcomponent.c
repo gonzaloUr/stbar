@@ -17,8 +17,9 @@ void* clock_component_init(const void* config, int* memfds, pthread_mutex_t* mut
 
 int clock_component_get_fd(void *userdata) {
     clock_component *comp = (clock_component*) userdata;
-    comp->fd = timerfd_create(CLOCK_REALTIME, TFD_CLOEXEC);
+    clock_component_cfg *config = (clock_component_cfg*) comp->config;
 
+    comp->fd = timerfd_create(CLOCK_REALTIME, TFD_CLOEXEC);
     if (comp->fd < 0) {
         free(comp);
         abort();
@@ -45,6 +46,7 @@ int clock_component_get_fd(void *userdata) {
         abort();
     }
 
+    if (config->on_tick) config->on_tick(comp);
     return comp->fd;
 }
 

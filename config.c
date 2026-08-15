@@ -4,8 +4,34 @@
 #include <stdio.h>
 #include <math.h>
 
+typedef struct {
+    char *default_sink;
+    char *default_source;
+} pa_component_cb_data;
+
+void on_server_info(const pa_server_info *i, void *userdata) {
+    pa_component *comp = (pa_component*) userdata;
+    pa_component_cfg *config = (pa_component_cfg*) comp->config;
+    pa_component_cb_data *cb_data = (pa_component_cb_data*) config->cb_data;
+
+    if (cb_data->default_sink) free(cb_data->default_sink);
+    if (cb_data->default_source) free(cb_data->default_source);
+
+    if (i->default_sink_name) cb_data->default_sink = strdup(i->default_sink_name);
+    if (i->default_source_name) cb_data->default_source = strdup(i->default_source_name);
+}
+
 void on_sink_info(const pa_sink_info *i, void *userdata) {
     pa_component *comp = (pa_component*) userdata;
+    pa_component_cfg *config = (pa_component_cfg*) comp->config;
+    pa_component_cb_data *cb_data = (pa_component_cb_data*) config->cb_data;
+
+    if (!cb_data->default_sink)
+        return;
+
+    if (strcmp(cb_data->default_sink, i->name))
+        return;
+
     int *memfds = comp->memfds;
     pthread_mutex_t *mutex = comp->mutex;
 
@@ -25,6 +51,15 @@ void on_sink_info(const pa_sink_info *i, void *userdata) {
 
 void on_source_info(const pa_source_info *i, void *userdata) {
     pa_component *comp = (pa_component*) userdata;
+    pa_component_cfg *config = (pa_component_cfg*) comp->config;
+    pa_component_cb_data *cb_data = (pa_component_cb_data*) config->cb_data;
+
+    if (!cb_data->default_source)
+        return;
+
+    if (strcmp(cb_data->default_source, i->name))
+        return;
+
     int *memfds = comp->memfds;
     pthread_mutex_t *mutex = comp->mutex;
 
@@ -42,24 +77,12 @@ void on_source_info(const pa_source_info *i, void *userdata) {
     pthread_mutex_unlock(mutex);
 }
 
-static const pa_component_cfg pa_cfg = {
-    .on_sink_info = &on_sink_info,
-    .on_source_info = &on_source_info,
-    .on_sink_input_info = NULL,
-    .on_source_output_info = NULL,
-    .on_module_info = NULL,
-    .on_client_info = NULL,
-    .on_sample_info = NULL,
-    .on_server_info = NULL,
-    .on_card_info = NULL,
-};
-
 void on_dev(struct udev_device* dev, void* userdata) {
     udev_component *comp = (udev_component*) userdata;
     int *memfds = comp->memfds;
     pthread_mutex_t *mutex = comp->mutex;
 
-    if (strcmp(udev_device_get_subsystem(dev), "backlight") == 0) {
+    if (dev == NULL || strcmp(udev_device_get_subsystem(dev), "backlight") == 0) {
         char result[256];
 
         FILE *fp = popen("light", "r");
@@ -80,20 +103,6 @@ void on_dev(struct udev_device* dev, void* userdata) {
         pthread_mutex_unlock(mutex);
     }
 }
-
-static const udev_subsystem_match udev_component_cfg_matches[] = {
-    { .subsystem = "backlight", .devtype = NULL },
-};
-
-static const udev_component_cfg udev_cfg = {
-    .subsystem_matches = udev_component_cfg_matches,
-    .subsystem_matches_size = sizeof(udev_component_cfg_matches) / sizeof(udev_subsystem_match),
-
-    .tag_matches = NULL,
-    .tag_matches_size = 0,
-
-    .on_dev = &on_dev
-};
 
 void on_tick(void* userdata) {
     clock_component *comp = (clock_component*) userdata;
@@ -116,6 +125,38 @@ void on_tick(void* userdata) {
 
     pthread_mutex_unlock(mutex);
 }
+
+static pa_component_cb_data pa_cb_data = {
+    .default_sink = NULL,
+    .default_source = NULL
+};
+
+static const pa_component_cfg pa_cfg = {
+    .cb_data = &pa_cb_data,
+    .on_sink_info = &on_sink_info,
+    .on_source_info = &on_source_info,
+    .on_sink_input_info = NULL,
+    .on_source_output_info = NULL,
+    .on_module_info = NULL,
+    .on_client_info = NULL,
+    .on_sample_info = NULL,
+    .on_server_info = &on_server_info,
+    .on_card_info = NULL,
+};
+
+static const udev_subsystem_match udev_component_cfg_matches[] = {
+    { .subsystem = "backlight", .devtype = NULL },
+};
+
+static const udev_component_cfg udev_cfg = {
+    .subsystem_matches = udev_component_cfg_matches,
+    .subsystem_matches_size = sizeof(udev_component_cfg_matches) / sizeof(udev_subsystem_match),
+
+    .tag_matches = NULL,
+    .tag_matches_size = 0,
+
+    .on_dev = &on_dev
+};
 
 static const clock_component_cfg clock_cfg = {
     .on_tick = on_tick

@@ -15,6 +15,7 @@ typedef struct {
 } pa_component;
 
 typedef struct {
+    void *cb_data;
     void (*on_sink_info)(const pa_sink_info*, void*);
     void (*on_source_info)(const pa_source_info*, void*);
     void (*on_sink_input_info)(const pa_sink_input_info*, void*);

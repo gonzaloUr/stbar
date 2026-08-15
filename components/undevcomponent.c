@@ -41,6 +41,7 @@ void* udev_component_init(const void *cfg, int *memfds, pthread_mutex_t *mutex) 
 
 int udev_component_get_fd(void *userdata) {
     udev_component *u = (udev_component*) userdata;
+    udev_component_cfg *c = (udev_component_cfg*) u->config;
 
     if (udev_monitor_enable_receiving(u->mon) < 0) {
         perror("udev_monitor_enable_receiving");
@@ -50,6 +51,7 @@ int udev_component_get_fd(void *userdata) {
     }
 
     u->fd = udev_monitor_get_fd(u->mon);
+    c->on_dev(NULL, u);
     return u->fd;
 }
 

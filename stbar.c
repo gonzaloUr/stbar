@@ -18,12 +18,38 @@ struct arg {
 
 #include "config.c"
 
-static size_t args_size = 0;
-static size_t modules_size = 0;
+static size_t args_size = sizeof(args) / sizeof(struct arg);
+static size_t modules_size = sizeof(modules) / sizeof(char*);
 static void **userdatas = NULL;
 static int *memfds = NULL;
 static pthread_mutex_t *mutex = NULL;
-struct epoll_event *events = NULL;
+static struct epoll_event *events = NULL;
+static int epollfd = -1;
+static int stbarfd = -1;
+
+void free_state() {
+    if (userdatas) {
+        for (int i = 0; i < args_size; i++)
+            if (userdatas[i]) free(userdatas[i]);
+
+        free(userdatas);
+    }
+
+    if (memfds) {
+        for (int i = 0; i < modules_size; i++)
+            if (memfds[i]) close(memfds[i]);
+
+        free(memfds);
+    }
+
+    if (mutex) {
+        pthread_mutex_destroy(mutex);
+        free(mutex);
+    }
+
+    if (events)
+        free(events);
+}
 
 int print_memfd(int i) {
     int fd = memfds[i];
@@ -44,7 +70,7 @@ int print_memfd(int i) {
 
     buf[n] = '\0';
 
-    printf("%s", buf);
+    dprintf(stbarfd, "%s", buf);
     free(buf);
 
     fflush(stdout);
@@ -53,10 +79,13 @@ int print_memfd(int i) {
 }
 
 int print_memfds() {
+    ftruncate(stbarfd, 0);
+    lseek(stbarfd, 0, SEEK_SET);
+
     if (print_memfd(0)) return 1;
 
     for (int i = 1; i < modules_size; i++) {
-        printf(" | ");
+        dprintf(stbarfd, " | ");
         if (print_memfd(i)) return 1;
     }
 
@@ -66,18 +95,16 @@ int print_memfds() {
 }
 
 int main() {
-    args_size = sizeof(args) / sizeof(struct arg);
-    modules_size = sizeof(modules) / sizeof(char*);
-
     userdatas = malloc(sizeof(void*) * args_size);
     memfds = malloc(sizeof(int) * modules_size);
     mutex = malloc(sizeof(pthread_mutex_t));
-
+    stbarfd = memfd_create("", MFD_CLOEXEC);
     pthread_mutex_init(mutex, NULL);
 
-    int epollfd = epoll_create1(0);
+    epollfd = epoll_create1(0);
     if (epollfd == -1) {
         perror("epoll_create1");
+        free_state();
         return 1;
     }
 
@@ -95,6 +122,7 @@ int main() {
         struct epoll_event ev = { .events = EPOLLIN, .data.fd = fd, .data.u32 = i };
         if (epoll_ctl(epollfd, EPOLL_CTL_ADD, fd, &ev) == -1) {
             perror("epoll_ctl");
+            free_state();
             return 1;
         }
     }
@@ -106,11 +134,33 @@ int main() {
         if (print_memfds()) return 1;
         pthread_mutex_unlock(mutex);
 
-        printf("\n");
+        struct stat st;
+        if (fstat(stbarfd, &st) < 0) {
+            free_state();
+            return 1;
+        }
+
+        char *buf = malloc(st.st_size + 1);
+        lseek(stbarfd, 0, SEEK_SET);
+        ssize_t n = read(stbarfd, buf, st.st_size);
+
+        if (n < 0) {
+            perror("read");
+            free_state();
+            return 1;
+        }
+
+        buf[n] = '\0';
+
+        char cmd[1024];
+        snprintf(cmd, sizeof(cmd), "xsetroot -name '%s'", buf);
+        system(cmd);
+        free(buf);
 
         int count = epoll_wait(epollfd, events, args_size, -1);
         if (count == -1) {
             perror("epoll_wait");
+            free_state();
             return 1;
         }
 

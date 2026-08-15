@@ -82,6 +82,7 @@ void pa_component_free(void *userdata) {
 // Callback related to the mainloop of this pulseaudio client.
 void ctx_state_callback(pa_context *ctx, void *userdata) {
     pa_component *self = (pa_component*) userdata;
+    pa_component_cfg *cfg = (pa_component_cfg*) self->config;
     pa_context_state_t state = pa_context_get_state(ctx);
 
     switch (state) {
@@ -98,6 +99,33 @@ void ctx_state_callback(pa_context *ctx, void *userdata) {
             break;
 
         case PA_CONTEXT_READY:
+            if (cfg->on_server_info)
+                pa_context_get_server_info(ctx, ctx_server_info_callback, userdata);
+
+            if (cfg->on_sink_info)
+                pa_context_get_sink_info_list(ctx, ctx_sink_info_callback, userdata);
+
+            if (cfg->on_source_info)
+                pa_context_get_source_info_list(ctx, ctx_source_info_callback, userdata);
+
+            if (cfg->on_sink_input_info)
+                pa_context_get_sink_input_info_list(ctx, ctx_sink_input_info_callback, userdata);
+
+            if (cfg->on_source_output_info)
+                pa_context_get_source_output_info_list(ctx, ctx_source_output_info_callback, userdata);
+
+            if (cfg->on_module_info)
+                pa_context_get_module_info_list(ctx, ctx_module_info_callback, userdata);
+
+            if (cfg->on_client_info)
+                pa_context_get_client_info_list(ctx, ctx_client_info_callback, userdata);
+
+            if (cfg->on_sample_info)
+                pa_context_get_sample_info_list(ctx, ctx_sample_info_callback, userdata);
+
+            if (cfg->on_card_info)
+                pa_context_get_card_info_list(ctx, ctx_card_info_callback, userdata);
+
             pa_context_subscribe(self->ctx, PA_SUBSCRIPTION_MASK_ALL, NULL, NULL);
             break;
 
