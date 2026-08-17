@@ -3,6 +3,7 @@
 #include <sys/epoll.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
+#include <errno.h>
 #include <pthread.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -30,14 +31,18 @@ static int stbarfd = -1;
 void free_state() {
     if (userdatas) {
         for (int i = 0; i < args_size; i++)
-            if (userdatas[i]) free(userdatas[i]);
+            if (userdatas[i]) {
+                struct arg arg = args[i];
+                arg.free(userdatas[i]);
+            }
 
         free(userdatas);
     }
 
     if (memfds) {
         for (int i = 0; i < modules_size; i++)
-            if (memfds[i]) close(memfds[i]);
+            if (memfds[i] > 0)
+                close(memfds[i]);
 
         free(memfds);
     }
@@ -49,14 +54,19 @@ void free_state() {
 
     if (events)
         free(events);
+
+    if (epollfd > 0)
+        close(epollfd);
+
+    if (stbarfd > 0)
+        close(epollfd);
 }
 
-int print_memfd(int i) {
-    int fd = memfds[i];
+char* read_fd(int fd) {
     struct stat st;
     if (fstat(fd, &st) == -1) {
         perror("fstat");
-        return 1;
+        return NULL;
     }
 
     size_t size = st.st_size;
@@ -65,15 +75,21 @@ int print_memfd(int i) {
 
     if (n == -1) {
         perror("pread");
-        return 1;
+        free(buf);
+        return NULL;
     }
 
     buf[n] = '\0';
+    return buf;
+}
+
+int print_memfd(int i) {
+    int fd = memfds[i];
+    char *buf = read_fd(fd);
+    if (!buf) return 1;
 
     dprintf(stbarfd, "%s", buf);
     free(buf);
-
-    fflush(stdout);
 
     return 0;
 }
@@ -82,14 +98,14 @@ int print_memfds() {
     ftruncate(stbarfd, 0);
     lseek(stbarfd, 0, SEEK_SET);
 
+    dprintf(stbarfd, left_padding);
     if (print_memfd(0)) return 1;
 
     for (int i = 1; i < modules_size; i++) {
-        dprintf(stbarfd, " | ");
+        dprintf(stbarfd, separator);
         if (print_memfd(i)) return 1;
     }
-
-    fflush(stdout);
+    dprintf(stbarfd, right_padding);
 
     return 0;
 }
@@ -131,37 +147,37 @@ int main() {
 
     do {
         pthread_mutex_lock(mutex);
-        if (print_memfds()) return 1;
+        if (print_memfds()) {
+            free_state();
+            return 1;
+        }
         pthread_mutex_unlock(mutex);
 
-        struct stat st;
-        if (fstat(stbarfd, &st) < 0) {
-            free_state();
-            return 1;
-        }
+        char *prog = "xsetroot -name";
+        char *buf = read_fd(stbarfd);
+        int size_cmd = sizeof(char) * (strlen(buf) + strlen(prog) + 4);
+        char *cmd = malloc(size_cmd);
 
-        char *buf = malloc(st.st_size + 1);
-        lseek(stbarfd, 0, SEEK_SET);
-        ssize_t n = read(stbarfd, buf, st.st_size);
-
-        if (n < 0) {
-            perror("read");
-            free_state();
-            return 1;
-        }
-
-        buf[n] = '\0';
-
-        char cmd[1024];
-        snprintf(cmd, sizeof(cmd), "xsetroot -name '%s'", buf);
+        snprintf(cmd, size_cmd, "%s '%s'", prog, buf);
         system(cmd);
+        free(cmd);
         free(buf);
 
-        int count = epoll_wait(epollfd, events, args_size, -1);
-        if (count == -1) {
-            perror("epoll_wait");
-            free_state();
-            return 1;
+        int count;
+        while (1) {
+            count = epoll_wait(epollfd, events, args_size, -1);
+
+            if (count == -1) {
+                if (errno == EINTR) {
+                    continue;
+                }
+
+                perror("epoll_wait");
+                free_state();
+                return 1;
+            }
+
+            break;
         }
 
         for (int i = 0; i < count; i++) {
@@ -172,7 +188,7 @@ int main() {
             void *self = userdatas[j];
             arg.exec(self);
         }
-    } while(1);
+    } while (1);
 
     return 0;
 }

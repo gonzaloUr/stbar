@@ -44,7 +44,7 @@ void on_sink_info(const pa_sink_info *i, void *userdata) {
     int fd = memfds[0];
     ftruncate(fd, 0);
     lseek(fd, 0, SEEK_SET);
-    dprintf(fd, "vol %3d", (int) round(percent));
+    dprintf(fd, "vol %d", (int) round(percent));
 
     pthread_mutex_unlock(mutex);
 }
@@ -72,7 +72,7 @@ void on_source_info(const pa_source_info *i, void *userdata) {
     int fd = memfds[1];
     ftruncate(fd, 0);
     lseek(fd, 0, SEEK_SET);
-    dprintf(fd, "mic %3d", (int) round(percent));
+    dprintf(fd, "mic %d", (int) round(percent));
 
     pthread_mutex_unlock(mutex);
 }
@@ -89,16 +89,14 @@ void on_dev(struct udev_device* dev, void* userdata) {
         if (!fp) abort();
         fgets(result, sizeof(result), fp);
         pclose(fp);
-
-        double brg_d = atof(result);
-        int brg = (int) round(brg_d);
+        double brg = atof(result);
 
         pthread_mutex_lock(mutex);
 
         int fd = memfds[2];
         ftruncate(fd, 0);
         lseek(fd, 0, SEEK_SET);
-        dprintf(fd, "brg %3d", brg);
+        dprintf(fd, "brg %d", (int) round(brg));
 
         pthread_mutex_unlock(mutex);
     }
@@ -161,6 +159,10 @@ static const udev_component_cfg udev_cfg = {
 static const clock_component_cfg clock_cfg = {
     .on_tick = on_tick
 };
+
+static const char separator[] = " | ";
+static const char left_padding[] = " ";
+static const char right_padding[] = " ";
 
 static const char *modules[] = {
     "vol ???",
