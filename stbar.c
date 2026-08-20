@@ -8,6 +8,8 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include <signal.h>
+#include <unistd.h>
 
 struct arg {
     const void *config;
@@ -27,8 +29,13 @@ static pthread_mutex_t *mutex = NULL;
 static struct epoll_event *events = NULL;
 static int epollfd = -1;
 static int stbarfd = -1;
+static volatile sig_atomic_t shutting_down = 0;
 
-void free_state() {
+static void signal_handler(int sig) {
+    shutting_down = 1;
+}
+
+static void free_state() {
     if (userdatas) {
         for (int i = 0; i < args_size; i++)
             if (userdatas[i]) {
@@ -62,7 +69,7 @@ void free_state() {
         close(epollfd);
 }
 
-char* read_fd(int fd) {
+static char* read_fd(int fd) {
     struct stat st;
     if (fstat(fd, &st) == -1) {
         perror("fstat");
@@ -83,7 +90,7 @@ char* read_fd(int fd) {
     return buf;
 }
 
-int print_memfd(int i) {
+static int print_memfd(int i) {
     int fd = memfds[i];
     char *buf = read_fd(fd);
     if (!buf) return 1;
@@ -94,7 +101,7 @@ int print_memfd(int i) {
     return 0;
 }
 
-int print_memfds() {
+static int print_memfds() {
     ftruncate(stbarfd, 0);
     lseek(stbarfd, 0, SEEK_SET);
 
@@ -111,6 +118,11 @@ int print_memfds() {
 }
 
 int main() {
+    signal(SIGINT,  signal_handler);
+    signal(SIGHUP,  signal_handler);
+    signal(SIGTERM, signal_handler);
+    signal(SIGQUIT, signal_handler);
+
     userdatas = malloc(sizeof(void*) * args_size);
     memfds = malloc(sizeof(int) * modules_size);
     mutex = malloc(sizeof(pthread_mutex_t));
@@ -169,6 +181,11 @@ int main() {
 
             if (count == -1) {
                 if (errno == EINTR) {
+                    if (shutting_down) {
+                        free_state();
+                        return 0;
+                    }
+
                     continue;
                 }
 
